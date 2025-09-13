@@ -5,8 +5,6 @@ import math
 import io
 import csv
 from PIL import Image
-import threading
-import time
 
 DB_FILE = "database.bin"
 SAVE_INTERVAL = 10_000_000  # save every 10 million primes
@@ -141,62 +139,51 @@ if st.button("Calculate average gaps and download CSV"):
     st.download_button("Download CSV", csv_buf, file_name="gap_anlzd.csv", mime="text/csv")
     st.success(f"CSV generated with {len(averages)} blocks.")
 
-# ---------- Live Prime Finder (Threaded) ----------
+# ---------- Live Prime Finder ----------
 st.header("Live Prime Finder")
 col1, col2 = st.columns(2)
-start_button = col1.button("Start Finding Primes (Background)")
+start_button = col1.button("Start Finding Primes")
 stop_button = col2.button("Stop Prime Finder")
 
+n_start = st.session_state.primes[-1] + 1
+primes_since_save = 0
+total_checked = 0
 progress_bar = st.progress(0)
 
-def live_prime_finder():
-    n_start = st.session_state.primes[-1] + 1
-    primes_since_save = 0
-    total_checked = 0
-    while st.session_state.finding_primes:
-        n = n_start
-        if n % 2 == 0:
-            n += 1
-        is_prime = True
-        limit = int(math.isqrt(n))
-        for p in st.session_state.primes:
-            if p > limit:
-                break
-            if n % p == 0:
-                is_prime = False
-                break
+while st.session_state.finding_primes:
+    n = n_start
+    if n % 2 == 0:
+        n += 1
+    is_prime = True
+    limit = int(math.isqrt(n))
+    for p in st.session_state.primes:
+        if p > limit:
+            break
+        if n % p == 0:
+            is_prime = False
+            break
+    if is_prime:
+        gap = n - st.session_state.primes[-1]
+        half_gap = gap if st.session_state.primes[-1] == 2 else gap // 2
+        st.session_state.gaps.append(half_gap)
+        st.session_state.primes.append(n)
+        primes_since_save += 1
+        total_checked += 1
 
-        if is_prime:
-            gap = n - st.session_state.primes[-1]
-            half_gap = gap if st.session_state.primes[-1] == 2 else gap // 2
-            st.session_state.gaps.append(half_gap)
-            st.session_state.primes.append(n)
-            primes_since_save += 1
-            total_checked += 1
+        if total_checked % 100 == 0:
+            update_banner()
+            progress = int((total_checked % 100_000) / 1000)
+            progress_bar.progress(min(progress, 100))
 
-            # Update banner every 100 primes
-            if total_checked % 100 == 0:
-                update_banner()
-                progress = int((total_checked % 100_000) / 1000)
-                progress_bar.progress(min(progress, 100))
+        if primes_since_save >= SAVE_INTERVAL:
+            save_gaps(st.session_state.gaps)
+            st.success(f"Saved {len(st.session_state.primes)} primes to {DB_FILE}")
+            primes_since_save = 0
 
-            # Save every SAVE_INTERVAL
-            if primes_since_save >= SAVE_INTERVAL:
-                save_gaps(st.session_state.gaps)
-                primes_since_save = 0
+    n_start += 2
+    if stop_button:
+        st.session_state.finding_primes = False
 
-        n_start += 2
-        time.sleep(0.0001)  # allow UI updates
-
-# ---------- Start/Stop Background Thread ----------
-if start_button and not st.session_state.finding_primes:
-    st.session_state.finding_primes = True
-    thread = threading.Thread(target=live_prime_finder, daemon=True)
-    thread.start()
-    st.info("Live prime finder started in background.")
-
-if stop_button:
-    st.session_state.finding_primes = False
-    st.success("Live prime finder stopped.")
-    save_gaps(st.session_state.gaps)
-    update_banner()
+st.success(f"Prime finding stopped. Total primes: {len(st.session_state.primes)}")
+save_gaps(st.session_state.gaps)
+update_banner()

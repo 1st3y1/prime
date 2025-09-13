@@ -12,9 +12,9 @@ st.markdown(
     """
     <div style='background-color:#FFD700; padding:30px; border-radius:5px; text-align:center;'>
         <span style='font-size:36px;'>the current database contains around</span><br>
-        <span style='font-size:48px; font-weight:bold;'>10 million</span><br>
+        <span style='font-size:48px; font-weight:bold;'>70 million</span><br>
         <span style='font-size:36px;'>primes</span><br>
-        <span style='font-size:18px;'>(test)</span>
+        <span style='font-size:18px;'>(1.397 billion numbers)</span>
     </div>
     """,
     unsafe_allow_html=True

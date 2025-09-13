@@ -7,11 +7,21 @@ import csv
 
 DB_FILE = "database.bin"
 
-# ---------- Helper Functions ----------
+# ---------- Highlighted Test Text ----------
+st.markdown(
+    "<div style='background-color:#FFD700; padding:10px; border-radius:5px; text-align:center;'>"
+    "<strong>THIS IS A TEST</strong>"
+    "</div>",
+    unsafe_allow_html=True
+)
 
+st.title("Prime Toolkit Web App (Half-Gap Optimized)")
+st.write("Tools: Nth prime finder, prime visualization, average gap analysis.")
+
+# ---------- Helper Functions ----------
 def load_gaps():
     if not os.path.exists(DB_FILE):
-        st.error(f"Database file '{DB_FILE}' not found.")
+        st.warning(f"Database file '{DB_FILE}' not found. Using hard-coded first primes.")
         return []
     gaps = array.array('I')
     with open(DB_FILE, 'rb') as f:
@@ -19,20 +29,27 @@ def load_gaps():
     return list(gaps)
 
 def reconstruct_primes(gaps):
-    """Reconstruct actual primes from half-gaps."""
-    primes = [2]
-    for g in gaps[1:]:
+    """Reconstruct primes from half-gaps. First four primes are hard-coded."""
+    if not gaps:
+        return [2, 3, 5, 7]
+    
+    primes = [2, 3, 5, 7]
+    for g in gaps[4:]:  # skip first four gaps (hard-coded)
         primes.append(primes[-1] + g*2)
     return set(primes)
 
 def get_nth_prime(n, gaps):
-    primes = reconstruct_primes(gaps)
+    # Handle first four primes manually
+    first_primes = [2, 3, 5, 7]
+    if n <= 4:
+        return first_primes[n-1]
+
+    primes = list(reconstruct_primes(gaps))
     if 1 <= n <= len(primes):
         return primes[n-1]
     return None
 
 def generate_image(size, primes):
-    """Generate grayscale prime image; return PIL Image."""
     total_pixels = size*size
     img = Image.new("L", (size, size), 255)
     pixels = img.load()
@@ -50,25 +67,36 @@ def generate_image(size, primes):
 
 def calculate_avg_gaps(block_size, gaps):
     averages = []
-    total_primes = len(gaps)
+    first_primes_count = 4
+    total_primes = len(gaps) + first_primes_count
     for i in range(0, total_primes, block_size):
-        block_gaps = gaps[i:i+block_size]
+        block_gaps = []
+        # Include first four hard-coded gaps if inside block
+        if i < first_primes_count:
+            # gaps for 2->3,3->5,5->7
+            hardcoded_gaps = [1, 1, 1]  # half-gaps after first prime
+            block_gaps.extend(hardcoded_gaps[i:first_primes_count])
+            i_offset = max(0, first_primes_count - i)
+        else:
+            i_offset = 0
+
+        # Add gaps from database
+        start_idx = max(0, i - first_primes_count)
+        end_idx = start_idx + block_size - len(block_gaps)
+        block_gaps.extend([g*2 for g in gaps[start_idx:end_idx]])
+
         if not block_gaps:
             continue
-        avg_gap = sum(g*2 for g in block_gaps)/len(block_gaps)
+        avg_gap = sum(block_gaps)/len(block_gaps)
         start_prime_index = i + 1
         averages.append((start_prime_index, avg_gap))
     return averages
 
-# ---------- Streamlit Interface ----------
-
-st.title("Prime Toolkit Web App (Half-Gap Optimized)")
-st.write("Tools: Nth prime finder, prime visualization, average gap analysis.")
-
+# ---------- Load Database ----------
 gaps = load_gaps()
 primes = reconstruct_primes(gaps)
 
-# --- Nth Prime Finder ---
+# ---------- Nth Prime Finder ----------
 st.header("Nth Prime Finder")
 n_input = st.number_input("Enter n (positive integer):", min_value=1, step=1)
 if st.button("Find nth prime"):
@@ -78,7 +106,7 @@ if st.button("Find nth prime"):
     else:
         st.error("n is out of range for the current database.")
 
-# --- Prime Visualization ---
+# ---------- Prime Visualization ----------
 st.header("Prime Visualization")
 img_size = st.number_input("Enter image side in pixels (max 2000 recommended):", min_value=1, step=1, value=500)
 if st.button("Generate prime image"):
@@ -91,7 +119,7 @@ if st.button("Generate prime image"):
     st.image(img, caption=f"Prime Visualization {img_size}x{img_size}", use_column_width=True)
     st.download_button("Download PNG", buf, file_name=f"_pr_vzl_{img_size}.png", mime="image/png")
 
-# --- Average Gap Analysis ---
+# ---------- Average Gap Analysis ----------
 st.header("Average Gap Analysis")
 block_size = st.number_input("Enter number of primes per block:", min_value=1, step=1, value=1000)
 if st.button("Calculate average gaps and download CSV"):

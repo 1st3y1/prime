@@ -1,56 +1,40 @@
 import streamlit as st
 import array
 import os
-from PIL import Image
+import math
 import io
 import csv
+from PIL import Image
 
 DB_FILE = "database.bin"
-
-# ---------- Highlighted Test Text ----------
-st.markdown(
-    """
-    <div style='background-color:#FFD700; padding:30px; border-radius:5px; text-align:center;'>
-        <span style='font-size:36px;'>the current database contains around</span><br>
-        <span style='font-size:48px; font-weight:bold;'>70 million</span><br>
-        <span style='font-size:36px;'>primes</span><br>
-        <span style='font-size:18px;'>(1.397 billion numbers)</span>
-    </div>
-    """,
-    unsafe_allow_html=True
-)
-
-
-st.title("Prime Toolkit Web App (Half-Gap Optimized)")
-st.write("Tools: Nth prime finder, prime visualization, average gap analysis.")
+SAVE_INTERVAL = 10_000_000  # save every 10 million primes
 
 # ---------- Helper Functions ----------
 def load_gaps():
     if not os.path.exists(DB_FILE):
-        st.warning(f"Database file '{DB_FILE}' not found. Using hard-coded first primes.")
+        st.warning(f"{DB_FILE} not found. Starting fresh with hard-coded primes.")
         return []
     gaps = array.array('I')
     with open(DB_FILE, 'rb') as f:
         gaps.fromfile(f, os.path.getsize(DB_FILE)//4)
     return list(gaps)
 
+def save_gaps(gaps):
+    arr = array.array('I', gaps)
+    with open(DB_FILE, 'wb') as f:
+        arr.tofile(f)
+
 def reconstruct_primes(gaps):
-    """Reconstruct primes from half-gaps. First four primes are hard-coded."""
-    if not gaps:
-        return [2, 3, 5, 7]
-    
     primes = [2, 3, 5, 7]
-    for g in gaps[4:]:  # skip first four gaps (hard-coded)
+    for g in gaps[4:]:
         primes.append(primes[-1] + g*2)
-    return set(primes)
+    return primes
 
 def get_nth_prime(n, gaps):
-    # Handle first four primes manually
     first_primes = [2, 3, 5, 7]
     if n <= 4:
         return first_primes[n-1]
-
-    primes = list(reconstruct_primes(gaps))
+    primes = reconstruct_primes(gaps)
     if 1 <= n <= len(primes):
         return primes[n-1]
     return None
@@ -77,20 +61,12 @@ def calculate_avg_gaps(block_size, gaps):
     total_primes = len(gaps) + first_primes_count
     for i in range(0, total_primes, block_size):
         block_gaps = []
-        # Include first four hard-coded gaps if inside block
         if i < first_primes_count:
-            # gaps for 2->3,3->5,5->7
-            hardcoded_gaps = [1, 1, 1]  # half-gaps after first prime
+            hardcoded_gaps = [1, 1, 1]
             block_gaps.extend(hardcoded_gaps[i:first_primes_count])
-            i_offset = max(0, first_primes_count - i)
-        else:
-            i_offset = 0
-
-        # Add gaps from database
         start_idx = max(0, i - first_primes_count)
         end_idx = start_idx + block_size - len(block_gaps)
         block_gaps.extend([g*2 for g in gaps[start_idx:end_idx]])
-
         if not block_gaps:
             continue
         avg_gap = sum(block_gaps)/len(block_gaps)
@@ -101,6 +77,26 @@ def calculate_avg_gaps(block_size, gaps):
 # ---------- Load Database ----------
 gaps = load_gaps()
 primes = reconstruct_primes(gaps)
+
+# ---------- Top Banner Placeholder ----------
+banner_placeholder = st.empty()
+def update_banner(primes):
+    banner_placeholder.markdown(
+        f"""
+        <div style='background-color:#FFD700; padding:30px; border-radius:5px; text-align:center;'>
+            <span style='font-size:36px;'>the current database contains around</span><br>
+            <span style='font-size:48px; font-weight:bold;'>{len(primes)//1_000_000} million</span><br>
+            <span style='font-size:36px;'>primes</span><br>
+            <span style='font-size:18px;'>(approx. {primes[-1]:,} numbers checked)</span>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
+update_banner(primes)
+
+st.title("Prime Toolkit Web App (Half-Gap Optimized)")
+st.write("Tools: Nth prime finder, prime visualization, average gap analysis, live prime finder.")
 
 # ---------- Nth Prime Finder ----------
 st.header("Nth Prime Finder")
@@ -138,3 +134,61 @@ if st.button("Calculate average gaps and download CSV"):
     csv_buf.seek(0)
     st.download_button("Download CSV", csv_buf, file_name="gap_anlzd.csv", mime="text/csv")
     st.success(f"CSV generated with {len(averages)} blocks.")
+
+# ---------- Live Prime Finder ----------
+st.header("Live Prime Finder")
+
+if "finding_primes" not in st.session_state:
+    st.session_state.finding_primes = False
+
+col1, col2 = st.columns(2)
+start_button = col1.button("Start Finding Primes")
+stop_button = col2.button("Stop Prime Finder")
+
+if start_button:
+    st.session_state.finding_primes = True
+    st.info("Finding primes... Press 'Stop Prime Finder' to interrupt.")
+
+n_start = primes[-1] + 1
+primes_since_save = 0
+progress_bar = st.progress(0)
+total_checked = 0
+
+while st.session_state.finding_primes:
+    n = n_start
+    if n % 2 == 0:
+        n += 1
+    is_prime = True
+    limit = int(math.isqrt(n))
+    for p in primes:
+        if p > limit:
+            break
+        if n % p == 0:
+            is_prime = False
+            break
+    if is_prime:
+        gap = n - primes[-1]
+        half_gap = gap if primes[-1] == 2 else gap // 2
+        gaps.append(half_gap)
+        primes.append(n)
+        primes_since_save += 1
+
+        if total_checked % 100 == 0:
+            update_banner(primes)
+
+        if primes_since_save >= SAVE_INTERVAL:
+            save_gaps(gaps)
+            st.success(f"Saved {len(primes)} primes to {DB_FILE}")
+            primes_since_save = 0
+
+    n_start += 2
+    total_checked += 1
+    if total_checked % 1000 == 0:
+        progress_bar.progress(min(100, total_checked / 100_000))
+
+    if stop_button:
+        st.session_state.finding_primes = False
+
+st.success(f"Prime finding stopped. Total primes: {len(primes)}")
+save_gaps(gaps)
+update_banner(primes)

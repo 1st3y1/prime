@@ -7,7 +7,8 @@ import csv
 from PIL import Image
 
 DB_FILE = "database.bin"
-SAVE_INTERVAL = 10_000_000  # save every 10 million primes
+SAVE_INTERVAL = 10_000_000   # save every 10 million primes
+PRIMES_PER_BATCH = 10_000   # how many primes to calculate per UI update
 
 # ---------- Helper Functions ----------
 def load_gaps():
@@ -74,15 +75,17 @@ def calculate_avg_gaps(block_size, gaps):
         averages.append((start_prime_index, avg_gap))
     return averages
 
-# ---------- Session State Initialization ----------
+# ---------- Initialize session state ----------
 if "gaps" not in st.session_state:
     st.session_state.gaps = load_gaps()
 if "primes" not in st.session_state:
     st.session_state.primes = reconstruct_primes(st.session_state.gaps)
 if "finding_primes" not in st.session_state:
     st.session_state.finding_primes = False
-if "is_admin" not in st.session_state:
-    st.session_state.is_admin = False
+if "primes_since_save" not in st.session_state:
+    st.session_state.primes_since_save = 0
+if "n_start" not in st.session_state:
+    st.session_state.n_start = st.session_state.primes[-1] + 1
 
 # ---------- Top Banner ----------
 banner_placeholder = st.empty()
@@ -99,65 +102,7 @@ def update_banner():
         """,
         unsafe_allow_html=True
     )
-
 update_banner()
-st.title("Prime Toolkit Web App (Half-Gap Optimized)")
-st.write("Tools: Nth prime finder, prime visualization, average gap analysis, live prime finder.")
-
-# ---------- Admin Login ----------
-if not st.session_state.is_admin:
-    pwd = st.text_input("Enter admin password to unlock extra features:", type="password")
-    if pwd and "admin_password" in st.secrets and pwd == st.secrets["admin_password"]:
-        st.session_state.is_admin = True
-        st.success("✅ Admin mode unlocked!")
-
-# ---------- Admin Features ----------
-if st.session_state.is_admin:
-    st.subheader("Admin Tools")
-
-    # Download button
-    if os.path.exists(DB_FILE):
-        with open(DB_FILE, "rb") as f:
-            st.download_button(
-                "⬇️ Download current database.bin",
-                f,
-                file_name="database.bin",
-                mime="application/octet-stream"
-            )
-
-    # Upload button
-    uploaded = st.file_uploader("⬆️ Upload a database.bin to replace current", type=["bin"])
-    if uploaded:
-        with open(DB_FILE, "wb") as f:
-            f.write(uploaded.read())
-        st.session_state.gaps = load_gaps()
-        st.session_state.primes = reconstruct_primes(st.session_state.gaps)
-        update_banner()
-        st.success("Database replaced successfully.")
-
-# ---------- Warning Banner ----------
-banner_warn = st.empty()
-if st.session_state.finding_primes:
-    banner_warn.markdown(
-        """
-        <div style="
-            position:fixed;
-            top:0; left:0; right:0;
-            background-color:rgba(255, 192, 203, 0.6);
-            color:#8B0000;
-            font-weight:bold;
-            font-size:20px;
-            text-align:center;
-            padding:10px;
-            z-index:1000;
-        ">
-        ⚠️ You cannot use the website while calculating primes ⚠️
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
-else:
-    banner_warn.empty()
 
 # ---------- Nth Prime Finder ----------
 st.header("Nth Prime Finder")
@@ -195,3 +140,58 @@ if st.button("Calculate average gaps and download CSV"):
     csv_buf.seek(0)
     st.download_button("Download CSV", csv_buf, file_name="gap_anlzd.csv", mime="text/csv")
     st.success(f"CSV generated with {len(averages)} blocks.")
+
+# ---------- Live Prime Finder ----------
+st.header("Live Prime Finder")
+
+col1, col2 = st.columns(2)
+if col1.button("Start Finding Primes"):
+    st.session_state.finding_primes = True
+if col2.button("Stop Prime Finder"):
+    st.session_state.finding_primes = False
+
+# Warning banner while running
+if st.session_state.finding_primes:
+    st.markdown(
+        """
+        <div style='position:fixed; top:0; left:0; width:100%; 
+             background-color:rgba(255,0,0,0.3); color:#660000; 
+             text-align:center; font-size:20px; font-weight:bold; padding:10px; z-index:9999;'>
+             🚫 You cannot use the website while calculating primes 🚫
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
+# Do one batch of prime finding if active
+if st.session_state.finding_primes:
+    primes_found = 0
+    n = st.session_state.n_start
+    if n % 2 == 0:
+        n += 1
+
+    while primes_found < PRIMES_PER_BATCH:
+        is_prime = True
+        limit = int(math.isqrt(n))
+        for p in st.session_state.primes:
+            if p > limit:
+                break
+            if n % p == 0:
+                is_prime = False
+                break
+        if is_prime:
+            gap = n - st.session_state.primes[-1]
+            half_gap = gap if st.session_state.primes[-1] == 2 else gap // 2
+            st.session_state.gaps.append(half_gap)
+            st.session_state.primes.append(n)
+            st.session_state.primes_since_save += 1
+            primes_found += 1
+
+            if st.session_state.primes_since_save >= SAVE_INTERVAL:
+                save_gaps(st.session_state.gaps)
+                st.session_state.primes_since_save = 0
+        n += 2
+
+    st.session_state.n_start = n
+    update_banner()
+    st.experimental_rerun()

@@ -109,7 +109,7 @@ st.write("Tools: Nth prime finder, prime visualization, average gap analysis, li
 # ---------- Nth Prime Finder ----------
 st.header("Nth Prime Finder")
 n_input = st.number_input("Enter n (positive integer):", min_value=1, step=1)
-if st.button("Find nth prime"):
+if st.button("Find nth prime", key="nth_button"):
     nth = get_nth_prime(n_input, st.session_state.gaps)
     if nth is not None:
         st.success(f"The {n_input}th prime is: {nth}")
@@ -119,7 +119,7 @@ if st.button("Find nth prime"):
 # ---------- Prime Visualization ----------
 st.header("Prime Visualization")
 img_size = st.number_input("Enter image side in pixels (max 2000 recommended):", min_value=1, step=1, value=500)
-if st.button("Generate prime image"):
+if st.button("Generate prime image", key="viz_button"):
     if img_size > 2000:
         st.warning("Images larger than 2000x2000 may crash the app. Proceed with caution.")
     img = generate_image(img_size, st.session_state.primes)
@@ -132,7 +132,7 @@ if st.button("Generate prime image"):
 # ---------- Average Gap Analysis ----------
 st.header("Average Gap Analysis")
 block_size = st.number_input("Enter number of primes per block:", min_value=1, step=1, value=1000)
-if st.button("Calculate average gaps and download CSV"):
+if st.button("Calculate average gaps and download CSV", key="gap_button"):
     averages = calculate_avg_gaps(block_size, st.session_state.gaps)
     csv_buf = io.StringIO()
     writer = csv.writer(csv_buf)
@@ -146,14 +146,36 @@ if st.button("Calculate average gaps and download CSV"):
 # ---------- Live Prime Finder ----------
 st.header("Live Prime Finder")
 col1, col2 = st.columns(2)
-if col1.button("Start Finding Primes"):
+if col1.button("Start Finding Primes", key="start_button"):
     st.session_state.finding_primes = True
-if col2.button("Stop Prime Finder"):
+if col2.button("Stop Prime Finder", key="stop_button"):
     st.session_state.finding_primes = False
 
+# Warning banner when running
 if st.session_state.finding_primes:
-    batch_size = 500  # primes per run (tweak for performance)
+    st.markdown(
+        """
+        <div style="
+            position:fixed;
+            top:0; left:0; right:0;
+            background-color:rgba(255, 192, 203, 0.6);
+            color:#8B0000;
+            font-weight:bold;
+            font-size:20px;
+            text-align:center;
+            padding:10px;
+            z-index:1000;
+        ">
+        ⚠️ You cannot use the website while calculating primes ⚠️
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
+if st.session_state.finding_primes:
+    batch_size = 500  # primes per run
     found = 0
+    progress_bar = st.progress(0, text="Finding primes...")
 
     while found < batch_size:
         n = st.session_state.next_n
@@ -174,6 +196,7 @@ if st.session_state.finding_primes:
             st.session_state.primes.append(n)
             st.session_state.unsaved_primes += 1
             found += 1
+            progress_bar.progress(found / batch_size, text=f"Batch progress: {found}/{batch_size}")
 
             if st.session_state.unsaved_primes >= SAVE_INTERVAL:
                 save_gaps(st.session_state.gaps)
@@ -183,4 +206,4 @@ if st.session_state.finding_primes:
         st.session_state.next_n = n + 2
 
     update_banner()
-    st.rerun()  # keep going until stopped
+    st.rerun()  # rerun after each batch

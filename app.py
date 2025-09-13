@@ -72,8 +72,14 @@ def format_number(n):
 # ---------- Session State ----------
 if "gaps" not in st.session_state:
     st.session_state.gaps = load_gaps()
+if not st.session_state.gaps:
+    st.session_state.gaps = []
+
 if "primes" not in st.session_state:
     st.session_state.primes = reconstruct_primes(st.session_state.gaps)
+if not st.session_state.primes:
+    st.session_state.primes = [2,3,5,7]
+
 if "primes_since_save" not in st.session_state:
     st.session_state.primes_since_save = 0
 if "n_start" not in st.session_state:

@@ -109,11 +109,12 @@ update_banner()
 # ---------- App Header ----------
 st.title("Prime Finder Web App")
 
-# ---------- Admin-only Database Upload ----------
+# ---------- Admin-only Database Upload/Download ----------
 if ADMIN_KEY:
-    key_input = st.text_input("Enter admin key to enable upload:", type="password")
+    key_input = st.text_input("Enter admin key to enable admin tools:", type="password")
     if key_input == ADMIN_KEY:
-        st.subheader("Admin: Upload Existing Database")
+        st.subheader("Admin Tools")
+
         uploaded_file = st.file_uploader("Upload your database.bin", type=["bin"])
         if uploaded_file is not None:
             gaps_arr = array.array('I')
@@ -124,6 +125,10 @@ if ADMIN_KEY:
             st.session_state.primes_since_save = 0
             update_banner()
             st.success(f"Database uploaded successfully! Total primes: {len(st.session_state.primes)}")
+
+        if os.path.exists(DB_FILE):
+            with open(DB_FILE, "rb") as f:
+                st.download_button("Download database.bin", f, file_name="database.bin", mime="application/octet-stream")
 
 # ---------- Nth Prime Finder ----------
 st.header("Nth Prime Finder")
@@ -162,7 +167,7 @@ if st.button("Calculate average gaps and download CSV"):
     st.download_button("Download CSV", csv_buf, file_name="gap_anlzd.csv", mime="text/csv")
     st.success(f"CSV generated with {len(averages)} blocks.")
 
-# ---------- Prime Finder with Progress ----------
+# ---------- Prime Finder ----------
 st.header("Prime Finder")
 st.markdown(
     "<p style='font-size:18px;'>Clicking this button a few times will help improve the website and make the database bigger</p>",
@@ -170,13 +175,21 @@ st.markdown(
 )
 
 if st.button("Find next batch of primes"):
+    overlay = st.markdown(
+        "<div style='position:fixed; top:0; left:0; width:100%; "
+        "background-color:rgba(255,182,193,0.5); color:#FF0000; "
+        "text-align:center; font-size:20px; z-index:100;'>"
+        "You cannot use the website while calculating primes</div>",
+        unsafe_allow_html=True
+    )
+
     primes_found = 0
     n = st.session_state.n_start
     if n % 2 == 0:
         n += 1
 
     progress_bar = st.progress(0)
-    sub_batch = 1_000  # update progress every 1,000 primes
+    sub_batch = 10_000
 
     while primes_found < PRIMES_PER_BATCH:
         is_prime = True
@@ -211,10 +224,4 @@ if st.button("Find next batch of primes"):
     progress_bar.progress(1.0)
     update_banner()
     st.success(f"Processed {primes_found} new primes. Total primes: {len(st.session_state.primes)}")
-
-# ---------- Admin-only Database Download ----------
-if ADMIN_KEY:
-    key_input2 = st.text_input("Enter admin key to enable download:", type="password", key="download_key")
-    if key_input2 == ADMIN_KEY and os.path.exists(DB_FILE):
-        with open(DB_FILE, "rb") as f:
-            st.download_button("Download database.bin", f, file_name="database.bin", mime="application/octet-stream")
+    overlay.empty()

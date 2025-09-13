@@ -5,7 +5,6 @@ import math
 import random
 
 DB_FILE = "database.bin"
-PART_SIZE_MB = 24  # Each part ≤ 24 MB
 MIN_BATCH = 100_000
 MAX_BATCH = 200_000
 
@@ -13,35 +12,14 @@ MAX_BATCH = 200_000
 ADMIN_KEY = st.secrets.get("admin_password", "")
 
 # ---------- Helper Functions ----------
-def merge_bin_parts():
-    """Automatically merge all database.bin.part* files into memory."""
-    part_files = sorted([f for f in os.listdir() if f.startswith(DB_FILE + ".part")])
-    if not part_files:
-        return []
-    merged = array.array('I')
-    for file in part_files:
-        size = os.path.getsize(file)
-        if size == 0 or size % 4 != 0:
-            st.warning(f"Skipping invalid or empty file {file}")
-            continue
-        with open(file, 'rb') as f:
-            arr = array.array('I')
-            arr.fromfile(f, size // 4)
-            merged.extend(arr)
-    return list(merged)
-
 def load_gaps():
-    # Auto-merge parts if they exist
-    gaps = merge_bin_parts()
-    if gaps:
-        return gaps
-    # Fallback to single database.bin
-    if os.path.exists(DB_FILE):
-        arr = array.array('I')
-        with open(DB_FILE, 'rb') as f:
-            arr.fromfile(f, os.path.getsize(DB_FILE)//4)
-        return list(arr)
-    return []
+    if not os.path.exists(DB_FILE):
+        st.warning(f"{DB_FILE} not found. Starting fresh with hard-coded primes.")
+        return []
+    gaps_arr = array.array('I')
+    with open(DB_FILE, 'rb') as f:
+        gaps_arr.fromfile(f, os.path.getsize(DB_FILE)//4)
+    return list(gaps_arr)
 
 def save_gaps(gaps):
     arr = array.array('I', gaps)
@@ -63,7 +41,9 @@ def get_nth_prime(n, gaps):
         return primes[n-1]
     return None
 
+# ---------- Number Formatting ----------
 def format_number(n):
+    """Format number as millions (2 decimal) or billions (3 decimal)."""
     if n < 1_000_000_000:
         return f"{n / 1_000_000:.2f} m"
     else:
@@ -72,14 +52,8 @@ def format_number(n):
 # ---------- Session State ----------
 if "gaps" not in st.session_state:
     st.session_state.gaps = load_gaps()
-if not st.session_state.gaps:
-    st.session_state.gaps = []
-
 if "primes" not in st.session_state:
     st.session_state.primes = reconstruct_primes(st.session_state.gaps)
-if not st.session_state.primes:
-    st.session_state.primes = [2,3,5,7]
-
 if "primes_since_save" not in st.session_state:
     st.session_state.primes_since_save = 0
 if "n_start" not in st.session_state:
@@ -104,32 +78,29 @@ def update_banner():
     )
 
 update_banner()
+
+# ---------- App Header ----------
 st.title("Prime Finder Web App")
 
-# ---------- Admin-only Database Upload ----------
+# ---------- Admin-only Database Upload/Download ----------
 if ADMIN_KEY:
     key_input = st.text_input("Enter admin key to enable admin tools:", type="password")
     if key_input == ADMIN_KEY:
         st.subheader("Admin Tools")
-        uploaded_files = st.file_uploader(
-            "Upload database chunks (.bin.part*)", type=["bin", "part"], accept_multiple_files=True
-        )
-        if uploaded_files:
-            merged_gaps = array.array('I')
-            for file in uploaded_files:
-                content = file.read()
-                if len(content) == 0 or len(content) % 4 != 0:
-                    st.warning(f"Skipping invalid file {file.name}")
-                    continue
-                chunk_gaps = array.array('I')
-                chunk_gaps.frombytes(content)
-                merged_gaps.extend(chunk_gaps)
-            st.session_state.gaps = list(merged_gaps)
+        uploaded_file = st.file_uploader("Upload your database.bin", type=["bin"])
+        if uploaded_file is not None:
+            gaps_arr = array.array('I')
+            gaps_arr.frombytes(uploaded_file.read())
+            st.session_state.gaps = list(gaps_arr)
             st.session_state.primes = reconstruct_primes(st.session_state.gaps)
             st.session_state.n_start = st.session_state.primes[-1] + 1
             st.session_state.primes_since_save = 0
             update_banner()
-            st.success(f"Merged {len(uploaded_files)} uploaded chunks.")
+            st.success(f"Database uploaded successfully! Total primes: {len(st.session_state.primes)}")
+
+        if os.path.exists(DB_FILE):
+            with open(DB_FILE, "rb") as f:
+                st.download_button("Download database.bin", f, file_name="database.bin", mime="application/octet-stream")
 
 # ---------- Nth Prime Finder ----------
 st.header("Nth Prime Finder")

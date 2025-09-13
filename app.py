@@ -10,7 +10,7 @@ DB_FILE = "database.bin"
 PRIMES_PER_BATCH = 100_000
 SAVE_INTERVAL = 1_000_000
 
-# ---------- ADMIN KEY ----------
+# ---------- ADMIN PASSWORD ----------
 ADMIN_KEY = st.secrets.get("admin_password", "")
 
 # ---------- Helper Functions ----------
@@ -66,7 +66,7 @@ def calculate_avg_gaps(block_size, gaps):
     for i in range(0, total_primes, block_size):
         block_gaps = []
         if i < first_primes_count:
-            hardcoded_gaps = [1, 1, 1]
+            hardcoded_gaps = [1,1,1]
             block_gaps.extend(hardcoded_gaps[i:first_primes_count])
         start_idx = max(0, i - first_primes_count)
         end_idx = start_idx + block_size - len(block_gaps)
@@ -103,10 +103,27 @@ def update_banner():
         """,
         unsafe_allow_html=True
     )
+
 update_banner()
 
-st.title("Prime Toolkit Web App (Half-Gap Optimized)")
-st.write("Tools: Nth prime finder, prime visualization, average gap analysis, prime finder.")
+# ---------- App Header ----------
+st.title("Prime Finder Web App")
+
+# ---------- Admin-only Database Upload ----------
+if ADMIN_KEY:
+    key_input = st.text_input("Enter admin key to enable upload:", type="password")
+    if key_input == ADMIN_KEY:
+        st.subheader("Admin: Upload Existing Database")
+        uploaded_file = st.file_uploader("Upload your database.bin", type=["bin"])
+        if uploaded_file is not None:
+            gaps_arr = array.array('I')
+            gaps_arr.frombytes(uploaded_file.read())
+            st.session_state.gaps = list(gaps_arr)
+            st.session_state.primes = reconstruct_primes(st.session_state.gaps)
+            st.session_state.n_start = st.session_state.primes[-1] + 1
+            st.session_state.primes_since_save = 0
+            update_banner()
+            st.success(f"Database uploaded successfully! Total primes: {len(st.session_state.primes)}")
 
 # ---------- Nth Prime Finder ----------
 st.header("Nth Prime Finder")
@@ -159,10 +176,9 @@ if st.button("Find next batch of primes"):
         n += 1
 
     progress_bar = st.progress(0)
-    batch_size = PRIMES_PER_BATCH
     sub_batch = 1_000  # update progress every 1,000 primes
 
-    while primes_found < batch_size:
+    while primes_found < PRIMES_PER_BATCH:
         is_prime = True
         limit = int(math.isqrt(n))
         for p in st.session_state.primes:
@@ -180,27 +196,25 @@ if st.button("Find next batch of primes"):
             st.session_state.primes_since_save += 1
             primes_found += 1
 
-            # Save database if needed
             if st.session_state.primes_since_save >= SAVE_INTERVAL:
                 arr = array.array('I', st.session_state.gaps)
                 with open(DB_FILE, 'wb') as f:
                     arr.tofile(f)
                 st.session_state.primes_since_save = 0
 
-            # Update progress bar every sub_batch
             if primes_found % sub_batch == 0:
-                progress_bar.progress(primes_found / batch_size)
+                progress_bar.progress(primes_found / PRIMES_PER_BATCH)
 
         n += 2
 
     st.session_state.n_start = n
-    progress_bar.progress(1.0)  # complete
+    progress_bar.progress(1.0)
     update_banner()
     st.success(f"Processed {primes_found} new primes. Total primes: {len(st.session_state.primes)}")
 
 # ---------- Admin-only Database Download ----------
-st.header("Download Database (Admin Only)")
-key_input = st.text_input("Enter admin key to download database:", type="password")
-if key_input == ADMIN_KEY and os.path.exists(DB_FILE):
-    with open(DB_FILE, "rb") as f:
-        st.download_button("Download database.bin", f, file_name="database.bin", mime="application/octet-stream")
+if ADMIN_KEY:
+    key_input2 = st.text_input("Enter admin key to enable download:", type="password", key="download_key")
+    if key_input2 == ADMIN_KEY and os.path.exists(DB_FILE):
+        with open(DB_FILE, "rb") as f:
+            st.download_button("Download database.bin", f, file_name="database.bin", mime="application/octet-stream")

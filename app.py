@@ -7,12 +7,10 @@ import csv
 from PIL import Image
 
 DB_FILE = "database.bin"
-PRIMES_PER_BATCH = 10_000
+PRIMES_PER_BATCH = 100_000
 SAVE_INTERVAL = 1_000_000
 
-# ---------- SECRET KEY ----------
-# Only you can see the download button if you set a secret key in Streamlit
-# st.secrets["admin_password"] = "your_secret_here"
+# ---------- ADMIN KEY ----------
 ADMIN_KEY = st.secrets.get("admin_password", "")
 
 # ---------- Helper Functions ----------
@@ -85,8 +83,6 @@ if "gaps" not in st.session_state:
     st.session_state.gaps = load_gaps()
 if "primes" not in st.session_state:
     st.session_state.primes = reconstruct_primes(st.session_state.gaps)
-if "finding_primes" not in st.session_state:
-    st.session_state.finding_primes = False
 if "primes_since_save" not in st.session_state:
     st.session_state.primes_since_save = 0
 if "n_start" not in st.session_state:
@@ -151,33 +147,16 @@ if st.button("Calculate average gaps and download CSV"):
 
 # ---------- Prime Finder ----------
 st.header("Prime Finder")
-if st.button("Find next batch of primes"):
-    st.session_state.finding_primes = True
-
 st.markdown(
     "<p style='font-size:18px;'>Clicking this button a few times will help improve the website and make the database bigger</p>",
     unsafe_allow_html=True
 )
-
-# ---------- Locked warning ----------
-if st.session_state.finding_primes:
-    st.markdown(
-        """
-        <div style='position:fixed; top:0; left:0; width:100%; 
-             background-color:rgba(255,0,0,0.3); color:#660000; 
-             text-align:center; font-size:20px; font-weight:bold; padding:10px; z-index:9999;'>
-             🚫 You cannot use the website while calculating primes 🚫
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
-
-# ---------- Prime batch calculation ----------
-if st.session_state.finding_primes:
+if st.button("Find next batch of primes"):
     primes_found = 0
     n = st.session_state.n_start
     if n % 2 == 0:
         n += 1
+
     while primes_found < PRIMES_PER_BATCH:
         is_prime = True
         limit = int(math.isqrt(n))
@@ -187,6 +166,7 @@ if st.session_state.finding_primes:
             if n % p == 0:
                 is_prime = False
                 break
+
         if is_prime:
             gap = n - st.session_state.primes[-1]
             half_gap = gap if st.session_state.primes[-1] == 2 else gap // 2
@@ -194,17 +174,20 @@ if st.session_state.finding_primes:
             st.session_state.primes.append(n)
             st.session_state.primes_since_save += 1
             primes_found += 1
+
             if st.session_state.primes_since_save >= SAVE_INTERVAL:
                 arr = array.array('I', st.session_state.gaps)
                 with open(DB_FILE, 'wb') as f:
                     arr.tofile(f)
                 st.session_state.primes_since_save = 0
+
+        n += 2
+
     st.session_state.n_start = n
     update_banner()
     st.success(f"Processed {primes_found} new primes. Total primes: {len(st.session_state.primes)}")
-    st.session_state.finding_primes = False
 
-# ---------- Restricted database download ----------
+# ---------- Admin-only Database Download ----------
 st.header("Download Database (Admin Only)")
 key_input = st.text_input("Enter admin key to download database:", type="password")
 if key_input == ADMIN_KEY and os.path.exists(DB_FILE):

@@ -15,28 +15,25 @@ def load_gaps():
         return []
     gaps = array.array('I')
     with open(DB_FILE, 'rb') as f:
-        gaps.fromfile(f, os.path.getsize(DB_FILE) // 4)
+        gaps.fromfile(f, os.path.getsize(DB_FILE)//4)
     return list(gaps)
 
 def reconstruct_primes(gaps):
-    if not gaps:
-        return set()
-    primes = [gaps[0]]
-    for gap in gaps[1:]:
-        primes.append(primes[-1] + gap)
+    """Reconstruct actual primes from half-gaps."""
+    primes = [2]
+    for g in gaps[1:]:
+        primes.append(primes[-1] + g*2)
     return set(primes)
 
 def get_nth_prime(n, gaps):
-    if n < 1 or n > len(gaps):
-        return None
-    prime = gaps[0]
-    for i in range(1, n):
-        prime += gaps[i]
-    return prime
+    primes = reconstruct_primes(gaps)
+    if 1 <= n <= len(primes):
+        return primes[n-1]
+    return None
 
 def generate_image(size, primes):
-    """Generate grayscale prime image; return as PIL Image."""
-    total_pixels = size * size
+    """Generate grayscale prime image; return PIL Image."""
+    total_pixels = size*size
     img = Image.new("L", (size, size), 255)
     pixels = img.load()
     n = 1
@@ -58,14 +55,14 @@ def calculate_avg_gaps(block_size, gaps):
         block_gaps = gaps[i:i+block_size]
         if not block_gaps:
             continue
-        avg_gap = sum(block_gaps)/len(block_gaps)
+        avg_gap = sum(g*2 for g in block_gaps)/len(block_gaps)
         start_prime_index = i + 1
         averages.append((start_prime_index, avg_gap))
     return averages
 
 # ---------- Streamlit Interface ----------
 
-st.title("Prime Toolkit Web App")
+st.title("Prime Toolkit Web App (Half-Gap Optimized)")
 st.write("Tools: Nth prime finder, prime visualization, average gap analysis.")
 
 gaps = load_gaps()

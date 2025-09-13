@@ -41,6 +41,14 @@ def get_nth_prime(n, gaps):
         return primes[n-1]
     return None
 
+# ---------- Number Formatting ----------
+def format_number(n):
+    """Format number as millions (2 decimal) or billions (3 decimal)."""
+    if n < 1_000_000_000:
+        return f"{n / 1_000_000:.2f} m"
+    else:
+        return f"{n / 1_000_000_000:.3f} b"
+
 # ---------- Session State ----------
 if "gaps" not in st.session_state:
     st.session_state.gaps = load_gaps()
@@ -55,13 +63,15 @@ if "n_start" not in st.session_state:
 banner_placeholder = st.empty()
 def update_banner():
     primes = st.session_state.primes
+    num_primes_million = len(primes) / 1_000_000
+    total_numbers_checked = primes[-1]
     banner_placeholder.markdown(
         f"""
         <div style='background-color:#FFD700; padding:30px; border-radius:5px; text-align:center;'>
             <span style='font-size:36px;'>the current database contains around</span><br>
-            <span style='font-size:48px; font-weight:bold;'>{len(primes)//1_000_000} million</span><br>
+            <span style='font-size:48px; font-weight:bold;'>{num_primes_million:.2f} million</span><br>
             <span style='font-size:36px;'>primes</span><br>
-            <span style='font-size:18px;'>(approx. {primes[-1]:,} numbers checked)</span>
+            <span style='font-size:18px;'>(approx. {format_number(total_numbers_checked)} numbers checked)</span>
         </div>
         """,
         unsafe_allow_html=True
@@ -110,7 +120,7 @@ st.markdown(
 )
 
 if st.button("Find next batch of primes"):
-    PRIMES_PER_BATCH = random.randint(MIN_BATCH, MAX_BATCH)
+    PRIMES_PER_BATCH = random.randint(100_000, 200_000)
     SAVE_INTERVAL = PRIMES_PER_BATCH
 
     primes_found = 0
@@ -154,4 +164,3 @@ if st.button("Find next batch of primes"):
     progress_bar.progress(1.0)
     update_banner()
     st.success(f"Processed {primes_found} new primes. Total primes: {len(st.session_state.primes)}")
-

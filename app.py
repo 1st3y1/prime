@@ -10,7 +10,7 @@ DB_FILE = "database.bin"
 # ---------- Highlighted Test Text ----------
 st.markdown(
     "<div style='background-color:#FFD700; padding:30px; border-radius:5px; text-align:center; font-size:36px;'>"
-    "<strong>The current database contains around 10 million primes.</strong>"
+    "The current database contains around <strong>10 million</strong> primes."
     "</div>",
     unsafe_allow_html=True
 )

@@ -5,6 +5,7 @@ import math
 import random
 
 DB_FILE = "database.bin"
+PART_SIZE_MB = 24  # Each part ≤ 24 MB
 MIN_BATCH = 100_000
 MAX_BATCH = 200_000
 
@@ -18,14 +19,15 @@ def merge_bin_parts():
     if not part_files:
         return []
     merged = array.array('I')
-    total_chunks = 0
     for file in part_files:
+        size = os.path.getsize(file)
+        if size == 0 or size % 4 != 0:
+            st.warning(f"Skipping invalid or empty file {file}")
+            continue
         with open(file, 'rb') as f:
             arr = array.array('I')
-            arr.fromfile(f, os.path.getsize(file)//4)
+            arr.fromfile(f, size // 4)
             merged.extend(arr)
-            total_chunks += 1
-    print(f"Merged {total_chunks} chunks, total primes: {len(merged)}")
     return list(merged)
 
 def load_gaps():
@@ -33,6 +35,7 @@ def load_gaps():
     gaps = merge_bin_parts()
     if gaps:
         return gaps
+    # Fallback to single database.bin
     if os.path.exists(DB_FILE):
         arr = array.array('I')
         with open(DB_FILE, 'rb') as f:
@@ -97,7 +100,7 @@ def update_banner():
 update_banner()
 st.title("Prime Finder Web App")
 
-# ---------- Admin-only Merge/Upload ----------
+# ---------- Admin-only Database Upload ----------
 if ADMIN_KEY:
     key_input = st.text_input("Enter admin key to enable admin tools:", type="password")
     if key_input == ADMIN_KEY:
@@ -108,8 +111,12 @@ if ADMIN_KEY:
         if uploaded_files:
             merged_gaps = array.array('I')
             for file in uploaded_files:
+                content = file.read()
+                if len(content) == 0 or len(content) % 4 != 0:
+                    st.warning(f"Skipping invalid file {file.name}")
+                    continue
                 chunk_gaps = array.array('I')
-                chunk_gaps.frombytes(file.read())
+                chunk_gaps.frombytes(content)
                 merged_gaps.extend(chunk_gaps)
             st.session_state.gaps = list(merged_gaps)
             st.session_state.primes = reconstruct_primes(st.session_state.gaps)

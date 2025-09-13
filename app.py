@@ -7,7 +7,7 @@ import csv
 from PIL import Image
 
 DB_FILE = "database.bin"
-PRIMES_PER_BATCH = 100_000
+PRIMES_PER_BATCH = 1_000_000
 SAVE_INTERVAL = 1_000_000
 
 # ---------- ADMIN PASSWORD ----------

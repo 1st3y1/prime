@@ -7,7 +7,7 @@ import csv
 from PIL import Image
 
 DB_FILE = "database.bin"
-SAVE_INTERVAL = 10_000_000  # save every 10 million primes
+SAVE_INTERVAL = 10_000  # save every 10k primes (for safety)
 
 # ---------- Helper Functions ----------
 def load_gaps():
@@ -81,6 +81,10 @@ if "primes" not in st.session_state:
     st.session_state.primes = reconstruct_primes(st.session_state.gaps)
 if "finding_primes" not in st.session_state:
     st.session_state.finding_primes = False
+if "next_n" not in st.session_state:
+    st.session_state.next_n = st.session_state.primes[-1] + 1
+if "unsaved_primes" not in st.session_state:
+    st.session_state.unsaved_primes = 0
 
 # ---------- Top Banner ----------
 banner_placeholder = st.empty()
@@ -142,48 +146,41 @@ if st.button("Calculate average gaps and download CSV"):
 # ---------- Live Prime Finder ----------
 st.header("Live Prime Finder")
 col1, col2 = st.columns(2)
-start_button = col1.button("Start Finding Primes")
-stop_button = col2.button("Stop Prime Finder")
+if col1.button("Start Finding Primes"):
+    st.session_state.finding_primes = True
+if col2.button("Stop Prime Finder"):
+    st.session_state.finding_primes = False
 
-n_start = st.session_state.primes[-1] + 1
-primes_since_save = 0
-total_checked = 0
-progress_bar = st.progress(0)
+if st.session_state.finding_primes:
+    batch_size = 500  # primes per run (tweak for performance)
+    found = 0
 
-while st.session_state.finding_primes:
-    n = n_start
-    if n % 2 == 0:
-        n += 1
-    is_prime = True
-    limit = int(math.isqrt(n))
-    for p in st.session_state.primes:
-        if p > limit:
-            break
-        if n % p == 0:
-            is_prime = False
-            break
-    if is_prime:
-        gap = n - st.session_state.primes[-1]
-        half_gap = gap if st.session_state.primes[-1] == 2 else gap // 2
-        st.session_state.gaps.append(half_gap)
-        st.session_state.primes.append(n)
-        primes_since_save += 1
-        total_checked += 1
+    while found < batch_size:
+        n = st.session_state.next_n
+        if n % 2 == 0:
+            n += 1
+        is_prime = True
+        limit = int(math.isqrt(n))
+        for p in st.session_state.primes:
+            if p > limit:
+                break
+            if n % p == 0:
+                is_prime = False
+                break
+        if is_prime:
+            gap = n - st.session_state.primes[-1]
+            half_gap = gap if st.session_state.primes[-1] == 2 else gap // 2
+            st.session_state.gaps.append(half_gap)
+            st.session_state.primes.append(n)
+            st.session_state.unsaved_primes += 1
+            found += 1
 
-        if total_checked % 100 == 0:
-            update_banner()
-            progress = int((total_checked % 100_000) / 1000)
-            progress_bar.progress(min(progress, 100))
+            if st.session_state.unsaved_primes >= SAVE_INTERVAL:
+                save_gaps(st.session_state.gaps)
+                st.session_state.unsaved_primes = 0
+                st.toast(f"Progress saved: {len(st.session_state.primes)} primes")
 
-        if primes_since_save >= SAVE_INTERVAL:
-            save_gaps(st.session_state.gaps)
-            st.success(f"Saved {len(st.session_state.primes)} primes to {DB_FILE}")
-            primes_since_save = 0
+        st.session_state.next_n = n + 2
 
-    n_start += 2
-    if stop_button:
-        st.session_state.finding_primes = False
-
-st.success(f"Prime finding stopped. Total primes: {len(st.session_state.primes)}")
-save_gaps(st.session_state.gaps)
-update_banner()
+    update_banner()
+    st.rerun()  # keep going until stopped

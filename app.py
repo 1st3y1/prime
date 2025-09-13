@@ -7,18 +7,23 @@ import csv
 from PIL import Image
 
 DB_FILE = "database.bin"
-SAVE_INTERVAL = 10_000_000   # save every 10 million primes
-PRIMES_PER_BATCH = 10_000   # how many primes to calculate per UI update
+SAVE_INTERVAL = 1_000_000
+PRIMES_PER_BATCH = 10_000  # primes processed per batch
+
+# ---------- SECRET KEY ----------
+# Only you can see the download button if you set a secret key in Streamlit
+# st.secrets["admin_password"] = "your_secret_here"
+ADMIN_KEY = st.secrets.get("admin_password", "")
 
 # ---------- Helper Functions ----------
 def load_gaps():
     if not os.path.exists(DB_FILE):
         st.warning(f"{DB_FILE} not found. Starting fresh with hard-coded primes.")
         return []
-    gaps = array.array('I')
+    gaps_arr = array.array('I')
     with open(DB_FILE, 'rb') as f:
-        gaps.fromfile(f, os.path.getsize(DB_FILE)//4)
-    return list(gaps)
+        gaps_arr.fromfile(f, os.path.getsize(DB_FILE)//4)
+    return list(gaps_arr)
 
 def save_gaps(gaps):
     arr = array.array('I', gaps)
@@ -75,7 +80,7 @@ def calculate_avg_gaps(block_size, gaps):
         averages.append((start_prime_index, avg_gap))
     return averages
 
-# ---------- Initialize session state ----------
+# ---------- Session State ----------
 if "gaps" not in st.session_state:
     st.session_state.gaps = load_gaps()
 if "primes" not in st.session_state:
@@ -103,6 +108,9 @@ def update_banner():
         unsafe_allow_html=True
     )
 update_banner()
+
+st.title("Prime Toolkit Web App (Half-Gap Optimized)")
+st.write("Tools: Nth prime finder, prime visualization, average gap analysis, live prime finder.")
 
 # ---------- Nth Prime Finder ----------
 st.header("Nth Prime Finder")
@@ -143,14 +151,13 @@ if st.button("Calculate average gaps and download CSV"):
 
 # ---------- Live Prime Finder ----------
 st.header("Live Prime Finder")
-
 col1, col2 = st.columns(2)
 if col1.button("Start Finding Primes"):
     st.session_state.finding_primes = True
 if col2.button("Stop Prime Finder"):
     st.session_state.finding_primes = False
 
-# Warning banner while running
+# ---------- Locked warning ----------
 if st.session_state.finding_primes:
     st.markdown(
         """
@@ -163,13 +170,12 @@ if st.session_state.finding_primes:
         unsafe_allow_html=True
     )
 
-# Do one batch of prime finding if active
+# ---------- Prime batch calculation ----------
 if st.session_state.finding_primes:
     primes_found = 0
     n = st.session_state.n_start
     if n % 2 == 0:
         n += 1
-
     while primes_found < PRIMES_PER_BATCH:
         is_prime = True
         limit = int(math.isqrt(n))
@@ -186,12 +192,17 @@ if st.session_state.finding_primes:
             st.session_state.primes.append(n)
             st.session_state.primes_since_save += 1
             primes_found += 1
-
             if st.session_state.primes_since_save >= SAVE_INTERVAL:
                 save_gaps(st.session_state.gaps)
                 st.session_state.primes_since_save = 0
         n += 2
-
     st.session_state.n_start = n
     update_banner()
-    st.experimental_rerun()
+    st.success(f"Processed {primes_found} new primes. Total primes: {len(st.session_state.primes)}")
+
+# ---------- Restricted database download ----------
+st.header("Download Database (Admin Only)")
+key_input = st.text_input("Enter admin key to download database:", type="password")
+if key_input == ADMIN_KEY and os.path.exists(DB_FILE):
+    with open(DB_FILE, "rb") as f:
+        st.download_button("Download database.bin", f, file_name="database.bin", mime="application/octet-stream")

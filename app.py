@@ -9,7 +9,7 @@ DB_FILE = "database.bin"
 
 # ---------- Highlighted Test Text ----------
 st.markdown(
-    "<div style='background-color:#FFD700; padding:10px; border-radius:5px; text-align:center;'>"
+    "<div style='background-color:#FFD700; padding:30px; border-radius:5px; text-align:center;'>"
     "<strong>THIS IS A TEST</strong>"
     "</div>",
     unsafe_allow_html=True

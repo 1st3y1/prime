@@ -74,13 +74,18 @@ def calculate_avg_gaps(block_size, gaps):
         averages.append((start_prime_index, avg_gap))
     return averages
 
-# ---------- Load Database ----------
-gaps = load_gaps()
-primes = reconstruct_primes(gaps)
+# ---------- Initialize session state ----------
+if "gaps" not in st.session_state:
+    st.session_state.gaps = load_gaps()
+if "primes" not in st.session_state:
+    st.session_state.primes = reconstruct_primes(st.session_state.gaps)
+if "finding_primes" not in st.session_state:
+    st.session_state.finding_primes = False
 
-# ---------- Top Banner Placeholder ----------
+# ---------- Top Banner ----------
 banner_placeholder = st.empty()
-def update_banner(primes):
+def update_banner():
+    primes = st.session_state.primes
     banner_placeholder.markdown(
         f"""
         <div style='background-color:#FFD700; padding:30px; border-radius:5px; text-align:center;'>
@@ -93,8 +98,7 @@ def update_banner(primes):
         unsafe_allow_html=True
     )
 
-update_banner(primes)
-
+update_banner()
 st.title("Prime Toolkit Web App (Half-Gap Optimized)")
 st.write("Tools: Nth prime finder, prime visualization, average gap analysis, live prime finder.")
 
@@ -102,7 +106,7 @@ st.write("Tools: Nth prime finder, prime visualization, average gap analysis, li
 st.header("Nth Prime Finder")
 n_input = st.number_input("Enter n (positive integer):", min_value=1, step=1)
 if st.button("Find nth prime"):
-    nth = get_nth_prime(n_input, gaps)
+    nth = get_nth_prime(n_input, st.session_state.gaps)
     if nth is not None:
         st.success(f"The {n_input}th prime is: {nth}")
     else:
@@ -114,7 +118,7 @@ img_size = st.number_input("Enter image side in pixels (max 2000 recommended):",
 if st.button("Generate prime image"):
     if img_size > 2000:
         st.warning("Images larger than 2000x2000 may crash the app. Proceed with caution.")
-    img = generate_image(img_size, primes)
+    img = generate_image(img_size, st.session_state.primes)
     buf = io.BytesIO()
     img.save(buf, format="PNG")
     buf.seek(0)
@@ -125,7 +129,7 @@ if st.button("Generate prime image"):
 st.header("Average Gap Analysis")
 block_size = st.number_input("Enter number of primes per block:", min_value=1, step=1, value=1000)
 if st.button("Calculate average gaps and download CSV"):
-    averages = calculate_avg_gaps(block_size, gaps)
+    averages = calculate_avg_gaps(block_size, st.session_state.gaps)
     csv_buf = io.StringIO()
     writer = csv.writer(csv_buf)
     writer.writerow(["Start Prime #", "Average Gap"])
@@ -137,22 +141,14 @@ if st.button("Calculate average gaps and download CSV"):
 
 # ---------- Live Prime Finder ----------
 st.header("Live Prime Finder")
-
-if "finding_primes" not in st.session_state:
-    st.session_state.finding_primes = False
-
 col1, col2 = st.columns(2)
 start_button = col1.button("Start Finding Primes")
 stop_button = col2.button("Stop Prime Finder")
 
-if start_button:
-    st.session_state.finding_primes = True
-    st.info("Finding primes... Press 'Stop Prime Finder' to interrupt.")
-
-n_start = primes[-1] + 1
+n_start = st.session_state.primes[-1] + 1
 primes_since_save = 0
-progress_bar = st.progress(0)
 total_checked = 0
+progress_bar = st.progress(0)
 
 while st.session_state.finding_primes:
     n = n_start
@@ -160,35 +156,34 @@ while st.session_state.finding_primes:
         n += 1
     is_prime = True
     limit = int(math.isqrt(n))
-    for p in primes:
+    for p in st.session_state.primes:
         if p > limit:
             break
         if n % p == 0:
             is_prime = False
             break
     if is_prime:
-        gap = n - primes[-1]
-        half_gap = gap if primes[-1] == 2 else gap // 2
-        gaps.append(half_gap)
-        primes.append(n)
+        gap = n - st.session_state.primes[-1]
+        half_gap = gap if st.session_state.primes[-1] == 2 else gap // 2
+        st.session_state.gaps.append(half_gap)
+        st.session_state.primes.append(n)
         primes_since_save += 1
+        total_checked += 1
 
         if total_checked % 100 == 0:
-            update_banner(primes)
+            update_banner()
+            progress = int((total_checked % 100_000) / 1000)
+            progress_bar.progress(min(progress, 100))
 
         if primes_since_save >= SAVE_INTERVAL:
-            save_gaps(gaps)
-            st.success(f"Saved {len(primes)} primes to {DB_FILE}")
+            save_gaps(st.session_state.gaps)
+            st.success(f"Saved {len(st.session_state.primes)} primes to {DB_FILE}")
             primes_since_save = 0
 
     n_start += 2
-    total_checked += 1
-    if total_checked % 1000 == 0:
-        progress_bar.progress(min(100, total_checked / 100_000))
-
     if stop_button:
         st.session_state.finding_primes = False
 
-st.success(f"Prime finding stopped. Total primes: {len(primes)}")
-save_gaps(gaps)
-update_banner(primes)
+st.success(f"Prime finding stopped. Total primes: {len(st.session_state.primes)}")
+save_gaps(st.session_state.gaps)
+update_banner()

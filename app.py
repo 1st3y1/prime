@@ -7,8 +7,8 @@ import csv
 from PIL import Image
 
 DB_FILE = "database.bin"
+PRIMES_PER_BATCH = 100_000
 SAVE_INTERVAL = 1_000_000
-PRIMES_PER_BATCH = 10_000  # primes processed per batch
 
 # ---------- SECRET KEY ----------
 # Only you can see the download button if you set a secret key in Streamlit
@@ -110,7 +110,7 @@ def update_banner():
 update_banner()
 
 st.title("Prime Toolkit Web App (Half-Gap Optimized)")
-st.write("Tools: Nth prime finder, prime visualization, average gap analysis, live prime finder.")
+st.write("Tools: Nth prime finder, prime visualization, average gap analysis, prime finder.")
 
 # ---------- Nth Prime Finder ----------
 st.header("Nth Prime Finder")
@@ -149,13 +149,15 @@ if st.button("Calculate average gaps and download CSV"):
     st.download_button("Download CSV", csv_buf, file_name="gap_anlzd.csv", mime="text/csv")
     st.success(f"CSV generated with {len(averages)} blocks.")
 
-# ---------- Live Prime Finder ----------
-st.header("Live Prime Finder")
-col1, col2 = st.columns(2)
-if col1.button("Start Finding Primes"):
+# ---------- Prime Finder ----------
+st.header("Prime Finder")
+if st.button("Find next batch of primes"):
     st.session_state.finding_primes = True
-if col2.button("Stop Prime Finder"):
-    st.session_state.finding_primes = False
+
+st.markdown(
+    "<p style='font-size:18px;'>Clicking this button a few times will help improve the website and make the database bigger</p>",
+    unsafe_allow_html=True
+)
 
 # ---------- Locked warning ----------
 if st.session_state.finding_primes:
@@ -193,12 +195,14 @@ if st.session_state.finding_primes:
             st.session_state.primes_since_save += 1
             primes_found += 1
             if st.session_state.primes_since_save >= SAVE_INTERVAL:
-                save_gaps(st.session_state.gaps)
+                arr = array.array('I', st.session_state.gaps)
+                with open(DB_FILE, 'wb') as f:
+                    arr.tofile(f)
                 st.session_state.primes_since_save = 0
-        n += 2
     st.session_state.n_start = n
     update_banner()
     st.success(f"Processed {primes_found} new primes. Total primes: {len(st.session_state.primes)}")
+    st.session_state.finding_primes = False
 
 # ---------- Restricted database download ----------
 st.header("Download Database (Admin Only)")

@@ -7,7 +7,7 @@ import csv
 from PIL import Image
 
 DB_FILE = "database.bin"
-SAVE_INTERVAL = 10_000  # save every 10k primes (for safety)
+SAVE_INTERVAL = 10_000_000  # save every 10 million primes
 
 # ---------- Helper Functions ----------
 def load_gaps():
@@ -74,17 +74,15 @@ def calculate_avg_gaps(block_size, gaps):
         averages.append((start_prime_index, avg_gap))
     return averages
 
-# ---------- Initialize session state ----------
+# ---------- Session State Initialization ----------
 if "gaps" not in st.session_state:
     st.session_state.gaps = load_gaps()
 if "primes" not in st.session_state:
     st.session_state.primes = reconstruct_primes(st.session_state.gaps)
 if "finding_primes" not in st.session_state:
     st.session_state.finding_primes = False
-if "next_n" not in st.session_state:
-    st.session_state.next_n = st.session_state.primes[-1] + 1
-if "unsaved_primes" not in st.session_state:
-    st.session_state.unsaved_primes = 0
+if "is_admin" not in st.session_state:
+    st.session_state.is_admin = False
 
 # ---------- Top Banner ----------
 banner_placeholder = st.empty()
@@ -106,54 +104,41 @@ update_banner()
 st.title("Prime Toolkit Web App (Half-Gap Optimized)")
 st.write("Tools: Nth prime finder, prime visualization, average gap analysis, live prime finder.")
 
-# ---------- Nth Prime Finder ----------
-st.header("Nth Prime Finder")
-n_input = st.number_input("Enter n (positive integer):", min_value=1, step=1)
-if st.button("Find nth prime", key="nth_button"):
-    nth = get_nth_prime(n_input, st.session_state.gaps)
-    if nth is not None:
-        st.success(f"The {n_input}th prime is: {nth}")
-    else:
-        st.error("n is out of range for the current database.")
+# ---------- Admin Login ----------
+if not st.session_state.is_admin:
+    pwd = st.text_input("Enter admin password to unlock extra features:", type="password")
+    if pwd and "admin_password" in st.secrets and pwd == st.secrets["admin_password"]:
+        st.session_state.is_admin = True
+        st.success("✅ Admin mode unlocked!")
 
-# ---------- Prime Visualization ----------
-st.header("Prime Visualization")
-img_size = st.number_input("Enter image side in pixels (max 2000 recommended):", min_value=1, step=1, value=500)
-if st.button("Generate prime image", key="viz_button"):
-    if img_size > 2000:
-        st.warning("Images larger than 2000x2000 may crash the app. Proceed with caution.")
-    img = generate_image(img_size, st.session_state.primes)
-    buf = io.BytesIO()
-    img.save(buf, format="PNG")
-    buf.seek(0)
-    st.image(img, caption=f"Prime Visualization {img_size}x{img_size}", use_column_width=True)
-    st.download_button("Download PNG", buf, file_name=f"_pr_vzl_{img_size}.png", mime="image/png")
+# ---------- Admin Features ----------
+if st.session_state.is_admin:
+    st.subheader("Admin Tools")
 
-# ---------- Average Gap Analysis ----------
-st.header("Average Gap Analysis")
-block_size = st.number_input("Enter number of primes per block:", min_value=1, step=1, value=1000)
-if st.button("Calculate average gaps and download CSV", key="gap_button"):
-    averages = calculate_avg_gaps(block_size, st.session_state.gaps)
-    csv_buf = io.StringIO()
-    writer = csv.writer(csv_buf)
-    writer.writerow(["Start Prime #", "Average Gap"])
-    for row in averages:
-        writer.writerow(row)
-    csv_buf.seek(0)
-    st.download_button("Download CSV", csv_buf, file_name="gap_anlzd.csv", mime="text/csv")
-    st.success(f"CSV generated with {len(averages)} blocks.")
+    # Download button
+    if os.path.exists(DB_FILE):
+        with open(DB_FILE, "rb") as f:
+            st.download_button(
+                "⬇️ Download current database.bin",
+                f,
+                file_name="database.bin",
+                mime="application/octet-stream"
+            )
 
-# ---------- Live Prime Finder ----------
-st.header("Live Prime Finder")
-col1, col2 = st.columns(2)
-if col1.button("Start Finding Primes", key="start_button"):
-    st.session_state.finding_primes = True
-if col2.button("Stop Prime Finder", key="stop_button"):
-    st.session_state.finding_primes = False
+    # Upload button
+    uploaded = st.file_uploader("⬆️ Upload a database.bin to replace current", type=["bin"])
+    if uploaded:
+        with open(DB_FILE, "wb") as f:
+            f.write(uploaded.read())
+        st.session_state.gaps = load_gaps()
+        st.session_state.primes = reconstruct_primes(st.session_state.gaps)
+        update_banner()
+        st.success("Database replaced successfully.")
 
-# Warning banner when running
+# ---------- Warning Banner ----------
+banner_warn = st.empty()
 if st.session_state.finding_primes:
-    st.markdown(
+    banner_warn.markdown(
         """
         <div style="
             position:fixed;
@@ -171,39 +156,42 @@ if st.session_state.finding_primes:
         """,
         unsafe_allow_html=True
     )
+else:
+    banner_warn.empty()
 
-if st.session_state.finding_primes:
-    batch_size = 500  # primes per run
-    found = 0
-    progress_bar = st.progress(0, text="Finding primes...")
+# ---------- Nth Prime Finder ----------
+st.header("Nth Prime Finder")
+n_input = st.number_input("Enter n (positive integer):", min_value=1, step=1)
+if st.button("Find nth prime"):
+    nth = get_nth_prime(n_input, st.session_state.gaps)
+    if nth is not None:
+        st.success(f"The {n_input}th prime is: {nth}")
+    else:
+        st.error("n is out of range for the current database.")
 
-    while found < batch_size:
-        n = st.session_state.next_n
-        if n % 2 == 0:
-            n += 1
-        is_prime = True
-        limit = int(math.isqrt(n))
-        for p in st.session_state.primes:
-            if p > limit:
-                break
-            if n % p == 0:
-                is_prime = False
-                break
-        if is_prime:
-            gap = n - st.session_state.primes[-1]
-            half_gap = gap if st.session_state.primes[-1] == 2 else gap // 2
-            st.session_state.gaps.append(half_gap)
-            st.session_state.primes.append(n)
-            st.session_state.unsaved_primes += 1
-            found += 1
-            progress_bar.progress(found / batch_size, text=f"Batch progress: {found}/{batch_size}")
+# ---------- Prime Visualization ----------
+st.header("Prime Visualization")
+img_size = st.number_input("Enter image side in pixels (max 2000 recommended):", min_value=1, step=1, value=500)
+if st.button("Generate prime image"):
+    if img_size > 2000:
+        st.warning("Images larger than 2000x2000 may crash the app. Proceed with caution.")
+    img = generate_image(img_size, st.session_state.primes)
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    buf.seek(0)
+    st.image(img, caption=f"Prime Visualization {img_size}x{img_size}", use_column_width=True)
+    st.download_button("Download PNG", buf, file_name=f"_pr_vzl_{img_size}.png", mime="image/png")
 
-            if st.session_state.unsaved_primes >= SAVE_INTERVAL:
-                save_gaps(st.session_state.gaps)
-                st.session_state.unsaved_primes = 0
-                st.toast(f"Progress saved: {len(st.session_state.primes)} primes")
-
-        st.session_state.next_n = n + 2
-
-    update_banner()
-    st.rerun()  # rerun after each batch
+# ---------- Average Gap Analysis ----------
+st.header("Average Gap Analysis")
+block_size = st.number_input("Enter number of primes per block:", min_value=1, step=1, value=1000)
+if st.button("Calculate average gaps and download CSV"):
+    averages = calculate_avg_gaps(block_size, st.session_state.gaps)
+    csv_buf = io.StringIO()
+    writer = csv.writer(csv_buf)
+    writer.writerow(["Start Prime #", "Average Gap"])
+    for row in averages:
+        writer.writerow(row)
+    csv_buf.seek(0)
+    st.download_button("Download CSV", csv_buf, file_name="gap_anlzd.csv", mime="text/csv")
+    st.success(f"CSV generated with {len(averages)} blocks.")

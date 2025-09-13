@@ -2,13 +2,11 @@ import streamlit as st
 import array
 import os
 import math
-import io
-import csv
-from PIL import Image
+import random
 
 DB_FILE = "database.bin"
-PRIMES_PER_BATCH = 1_000_000
-SAVE_INTERVAL = 1_000_000
+MIN_BATCH = 100_000
+MAX_BATCH = 200_000
 
 # ---------- ADMIN PASSWORD ----------
 ADMIN_KEY = st.secrets.get("admin_password", "")
@@ -42,41 +40,6 @@ def get_nth_prime(n, gaps):
     if 1 <= n <= len(primes):
         return primes[n-1]
     return None
-
-def generate_image(size, primes):
-    total_pixels = size*size
-    img = Image.new("L", (size, size), 255)
-    pixels = img.load()
-    n = 1
-    for y in range(size):
-        for x in range(size):
-            if n in primes:
-                pixels[x, y] = 0
-            n += 1
-            if n > total_pixels:
-                break
-        if n > total_pixels:
-            break
-    return img
-
-def calculate_avg_gaps(block_size, gaps):
-    averages = []
-    first_primes_count = 4
-    total_primes = len(gaps) + first_primes_count
-    for i in range(0, total_primes, block_size):
-        block_gaps = []
-        if i < first_primes_count:
-            hardcoded_gaps = [1,1,1]
-            block_gaps.extend(hardcoded_gaps[i:first_primes_count])
-        start_idx = max(0, i - first_primes_count)
-        end_idx = start_idx + block_size - len(block_gaps)
-        block_gaps.extend([g*2 for g in gaps[start_idx:end_idx]])
-        if not block_gaps:
-            continue
-        avg_gap = sum(block_gaps)/len(block_gaps)
-        start_prime_index = i + 1
-        averages.append((start_prime_index, avg_gap))
-    return averages
 
 # ---------- Session State ----------
 if "gaps" not in st.session_state:
@@ -114,7 +77,6 @@ if ADMIN_KEY:
     key_input = st.text_input("Enter admin key to enable admin tools:", type="password")
     if key_input == ADMIN_KEY:
         st.subheader("Admin Tools")
-
         uploaded_file = st.file_uploader("Upload your database.bin", type=["bin"])
         if uploaded_file is not None:
             gaps_arr = array.array('I')
@@ -140,33 +102,6 @@ if st.button("Find nth prime"):
     else:
         st.error("n is out of range for the current database.")
 
-# ---------- Prime Visualization ----------
-st.header("Prime Visualization")
-img_size = st.number_input("Enter image side in pixels (max 2000 recommended):", min_value=1, step=1, value=500)
-if st.button("Generate prime image"):
-    if img_size > 2000:
-        st.warning("Images larger than 2000x2000 may crash the app. Proceed with caution.")
-    img = generate_image(img_size, st.session_state.primes)
-    buf = io.BytesIO()
-    img.save(buf, format="PNG")
-    buf.seek(0)
-    st.image(img, caption=f"Prime Visualization {img_size}x{img_size}", use_column_width=True)
-    st.download_button("Download PNG", buf, file_name=f"_pr_vzl_{img_size}.png", mime="image/png")
-
-# ---------- Average Gap Analysis ----------
-st.header("Average Gap Analysis")
-block_size = st.number_input("Enter number of primes per block:", min_value=1, step=1, value=1000)
-if st.button("Calculate average gaps and download CSV"):
-    averages = calculate_avg_gaps(block_size, st.session_state.gaps)
-    csv_buf = io.StringIO()
-    writer = csv.writer(csv_buf)
-    writer.writerow(["Start Prime #", "Average Gap"])
-    for row in averages:
-        writer.writerow(row)
-    csv_buf.seek(0)
-    st.download_button("Download CSV", csv_buf, file_name="gap_anlzd.csv", mime="text/csv")
-    st.success(f"CSV generated with {len(averages)} blocks.")
-
 # ---------- Prime Finder ----------
 st.header("Prime Finder")
 st.markdown(
@@ -175,13 +110,8 @@ st.markdown(
 )
 
 if st.button("Find next batch of primes"):
-    overlay = st.markdown(
-        "<div style='position:fixed; top:0; left:0; width:100%; "
-        "background-color:rgba(255,182,193,0.5); color:#FF0000; "
-        "text-align:center; font-size:20px; z-index:100;'>"
-        "You cannot use the website while calculating primes</div>",
-        unsafe_allow_html=True
-    )
+    PRIMES_PER_BATCH = random.randint(MIN_BATCH, MAX_BATCH)
+    SAVE_INTERVAL = PRIMES_PER_BATCH
 
     primes_found = 0
     n = st.session_state.n_start
@@ -224,4 +154,4 @@ if st.button("Find next batch of primes"):
     progress_bar.progress(1.0)
     update_banner()
     st.success(f"Processed {primes_found} new primes. Total primes: {len(st.session_state.primes)}")
-    overlay.empty()
+

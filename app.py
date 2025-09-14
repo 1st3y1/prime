@@ -27,9 +27,12 @@ def save_gaps(gaps):
         arr.tofile(f)
 
 def reconstruct_primes(gaps):
+    """Reconstruct actual prime numbers from half-gaps. First 4 primes are hard-coded."""
     primes = [2, 3, 5, 7]
+    last = 7
     for g in gaps[4:]:
-        primes.append(primes[-1] + g*2)
+        last += g*2
+        primes.append(last)
     return primes
 
 def get_nth_prime(n, gaps):
@@ -41,38 +44,38 @@ def get_nth_prime(n, gaps):
         return primes[n-1]
     return None
 
-def format_number(num):
-    """Format large numbers nicely (millions with 2 decimals, billions as a.bcd)."""
-    if num >= 1_000_000_000:
-        return f"{num/1_000_000_000:.3f}B"
-    elif num >= 1_000_000:
-        return f"{num/1_000_000:.2f}M"
+def total_primes_from_gaps(gaps):
+    return 4 + len(gaps[4:])
+
+def format_number(n):
+    """Format numbers for banner: millions with two decimals, billions with 3 decimals"""
+    if n >= 1_000_000_000:
+        return f"{n/1_000_000_000:.3f}b"
+    elif n >= 1_000_000:
+        return f"{n/1_000_000:.2f}m"
     else:
-        return f"{num:,}"
+        return f"{n:,}"
 
 # ---------- Session State ----------
 if "gaps" not in st.session_state:
     st.session_state.gaps = load_gaps()
-if "primes" not in st.session_state:
-    st.session_state.primes = reconstruct_primes(st.session_state.gaps)
 if "primes_since_save" not in st.session_state:
     st.session_state.primes_since_save = 0
 if "n_start" not in st.session_state:
-    st.session_state.n_start = st.session_state.primes[-1] + 1
+    st.session_state.n_start = 7 if not st.session_state.gaps else reconstruct_primes(st.session_state.gaps)[-1]
 
 # ---------- Top Banner ----------
 banner_placeholder = st.empty()
 def update_banner():
-    primes = st.session_state.primes
-    million_text = f"{len(primes)/1_000_000:.2f} million"
-    checked_text = format_number(primes[-1])
+    total_primes = total_primes_from_gaps(st.session_state.gaps)
+    max_checked = reconstruct_primes(st.session_state.gaps)[-1]
     banner_placeholder.markdown(
         f"""
         <div style='background-color:#FFD700; padding:30px; border-radius:5px; text-align:center;'>
             <span style='font-size:36px;'>the current database contains around</span><br>
-            <span style='font-size:48px; font-weight:bold;'>{million_text}</span><br>
+            <span style='font-size:48px; font-weight:bold;'>{format_number(total_primes)}</span><br>
             <span style='font-size:36px;'>primes</span><br>
-            <span style='font-size:18px;'>(approx. {checked_text} numbers checked)</span>
+            <span style='font-size:18px;'>(approx. {format_number(max_checked)} numbers checked)</span>
         </div>
         """,
         unsafe_allow_html=True
@@ -88,80 +91,22 @@ if ADMIN_KEY:
     key_input = st.text_input("Enter admin key to enable admin tools:", type="password")
     if key_input == ADMIN_KEY:
         st.subheader("Admin Tools")
-
-        uploaded_files = st.file_uploader(
-            "Upload your database parts (.part*.bin)",
-            type=["bin"],
-            accept_multiple_files=True
-        )
-
+        uploaded_files = st.file_uploader("Upload your database parts (.bin) or full database", type=["bin"], accept_multiple_files=True)
         if uploaded_files:
-            st.info(f"{len(uploaded_files)} file(s) uploaded. Click 'Preview Merge' to check them.")
-
-            if st.button("Preview Merge"):
-                try:
-                    # Sort by part number
-                    uploaded_files_sorted = sorted(
-                        uploaded_files,
-                        key=lambda x: int(x.name.split("part")[1].split(".")[0])
-                    )
-
-                    # Validate part numbering
-                    expected_parts = list(range(len(uploaded_files_sorted)))
-                    actual_parts = [int(f.name.split("part")[1].split(".")[0]) for f in uploaded_files_sorted]
-
-                    if expected_parts != actual_parts:
-                        st.error(f"Missing or misnumbered parts! Expected {expected_parts}, got {actual_parts}.")
-                    elif actual_parts[0] != 0:
-                        st.error("You must include part0 when uploading database parts.")
-                    else:
-                        gaps_arr = array.array('I')
-                        valid_files = 0
-
-                        for uf in uploaded_files_sorted:
-                            uf_bytes = uf.getvalue()
-                            if not uf_bytes:
-                                st.error(f"File {uf.name} is empty.")
-                                break
-                            if len(uf_bytes) % 4 != 0:
-                                st.error(f"File {uf.name} size invalid (not divisible by 4).")
-                                break
-
-                            temp_arr = array.array('I')
-                            temp_arr.frombytes(uf_bytes)
-                            gaps_arr.extend(temp_arr)
-                            valid_files += 1
-
-                        if valid_files == len(uploaded_files_sorted):
-                            # Preview primes count
-                            preview_primes = reconstruct_primes(gaps_arr)
-                            st.session_state.preview_gaps = list(gaps_arr)  # store temporarily
-                            st.session_state.preview_primes = preview_primes
-
-                            st.success(f"Preview successful! "
-                                       f"Merging {valid_files} parts would give "
-                                       f"{len(preview_primes)} primes. "
-                                       f"Highest prime: {preview_primes[-1]:,}")
-
-                            if st.button("Confirm Merge & Save"):
-                                save_gaps(st.session_state.preview_gaps)
-                                st.session_state.gaps = st.session_state.preview_gaps
-                                st.session_state.primes = st.session_state.preview_primes
-                                st.session_state.n_start = st.session_state.primes[-1] + 1
-                                st.session_state.primes_since_save = 0
-                                update_banner()
-                                st.success(f"Database saved to {DB_FILE} with {len(st.session_state.primes)} primes.")
-
-                except Exception as e:
-                    st.error(f"Preview failed: {e}")
+            merged_gaps = []
+            for file in uploaded_files:
+                arr = array.array('I')
+                arr.frombytes(file.read())
+                merged_gaps.extend(list(arr))
+            st.session_state.gaps = merged_gaps
+            st.session_state.n_start = reconstruct_primes(st.session_state.gaps)[-1] + 1
+            st.session_state.primes_since_save = 0
+            update_banner()
+            st.success(f"Database uploaded successfully! Total primes: {total_primes_from_gaps(st.session_state.gaps)}")
 
         if os.path.exists(DB_FILE):
             with open(DB_FILE, "rb") as f:
-                st.download_button(
-                    "Download database.bin", f,
-                    file_name="database.bin",
-                    mime="application/octet-stream"
-                )
+                st.download_button("Download database.bin", f, file_name="database.bin", mime="application/octet-stream")
 
 # ---------- Nth Prime Finder ----------
 st.header("Nth Prime Finder")
@@ -189,13 +134,21 @@ if st.button("Find next batch of primes"):
     if n % 2 == 0:
         n += 1
 
-    progress_bar = st.progress(0)
+    # Maintain a working prime list for divisibility check
+    first_primes = [2, 3, 5, 7]
+    primes_for_check = first_primes[:]
+    last_prime = 7
+    for g in st.session_state.gaps[4:]:
+        last_prime += g*2
+        primes_for_check.append(last_prime)
+
     sub_batch = 10_000
+    progress_bar = st.progress(0)
 
     while primes_found < PRIMES_PER_BATCH:
-        is_prime = True
         limit = int(math.isqrt(n))
-        for p in st.session_state.primes:
+        is_prime = True
+        for p in primes_for_check:
             if p > limit:
                 break
             if n % p == 0:
@@ -203,25 +156,24 @@ if st.button("Find next batch of primes"):
                 break
 
         if is_prime:
-            gap = n - st.session_state.primes[-1]
-            half_gap = gap if st.session_state.primes[-1] == 2 else gap // 2
+            gap = n - last_prime
+            half_gap = gap if last_prime == 2 else gap // 2
             st.session_state.gaps.append(half_gap)
-            st.session_state.primes.append(n)
             st.session_state.primes_since_save += 1
             primes_found += 1
 
+            last_prime = n
+            primes_for_check.append(n)
+
             if st.session_state.primes_since_save >= SAVE_INTERVAL:
-                arr = array.array('I', st.session_state.gaps)
-                with open(DB_FILE, 'wb') as f:
-                    arr.tofile(f)
+                save_gaps(st.session_state.gaps)
                 st.session_state.primes_since_save = 0
 
-            if primes_found % sub_batch == 0:
-                progress_bar.progress(primes_found / PRIMES_PER_BATCH)
-
         n += 2
+        if primes_found % sub_batch == 0:
+            progress_bar.progress(primes_found / PRIMES_PER_BATCH)
 
     st.session_state.n_start = n
     progress_bar.progress(1.0)
     update_banner()
-    st.success(f"Processed {primes_found} new primes. Total primes: {len(st.session_state.primes)}")
+    st.success(f"Processed {primes_found} new primes. Total primes: {total_primes_from_gaps(st.session_state.gaps)}")

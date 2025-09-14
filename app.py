@@ -89,7 +89,6 @@ if ADMIN_KEY:
     if key_input == ADMIN_KEY:
         st.subheader("Admin Tools")
 
-        # Upload parts, but don't merge yet
         uploaded_files = st.file_uploader(
             "Upload your database parts (.part*.bin)",
             type=["bin"],
@@ -101,7 +100,7 @@ if ADMIN_KEY:
 
             if st.button("Merge Parts"):
                 try:
-                    # Sort files by part number
+                    # Sort by part number
                     uploaded_files_sorted = sorted(
                         uploaded_files,
                         key=lambda x: int(x.name.split("part")[1].split(".")[0])
@@ -111,24 +110,25 @@ if ADMIN_KEY:
                     actual_parts = [int(f.name.split("part")[1].split(".")[0]) for f in uploaded_files_sorted]
 
                     if expected_parts != actual_parts:
-                        st.error(f"Missing parts! Expected parts {expected_parts}, but got {actual_parts}.")
+                        st.error(f"Missing parts! Expected {expected_parts}, got {actual_parts}.")
                     elif actual_parts[0] != 0:
                         st.error("You must include part0 when uploading database parts.")
                     else:
-                        # Merge into one array
                         gaps_arr = array.array('I')
                         valid_files = 0
 
                         for uf in uploaded_files_sorted:
-                            content = uf.read()
-                            if not content:
+                            # Always read fresh bytes
+                            uf_bytes = uf.getvalue()  
+                            if not uf_bytes:
                                 st.error(f"File {uf.name} is empty.")
                                 break
-                            if len(content) % 4 != 0:
+                            if len(uf_bytes) % 4 != 0:
                                 st.error(f"File {uf.name} size invalid (not divisible by 4).")
                                 break
+
                             temp_arr = array.array('I')
-                            temp_arr.frombytes(content)
+                            temp_arr.frombytes(uf_bytes)
                             gaps_arr.extend(temp_arr)
                             valid_files += 1
 
@@ -143,10 +143,10 @@ if ADMIN_KEY:
                             st.success(f"Merged {valid_files} files successfully! "
                                        f"Database saved to {DB_FILE}. "
                                        f"Total primes: {len(st.session_state.primes)}")
+
                 except Exception as e:
                     st.error(f"Merge failed: {e}")
 
-        # Download merged database.bin
         if os.path.exists(DB_FILE):
             with open(DB_FILE, "rb") as f:
                 st.download_button(

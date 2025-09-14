@@ -41,13 +41,14 @@ def get_nth_prime(n, gaps):
         return primes[n-1]
     return None
 
-# ---------- Number Formatting ----------
-def format_number(n):
-    """Format number as millions (2 decimal) or billions (3 decimal)."""
-    if n < 1_000_000_000:
-        return f"{n / 1_000_000:.2f} m"
+def format_number(num):
+    """Format large numbers nicely (millions with 2 decimals, billions as a.bcd)."""
+    if num >= 1_000_000_000:
+        return f"{num/1_000_000_000:.3f}B"
+    elif num >= 1_000_000:
+        return f"{num/1_000_000:.2f}M"
     else:
-        return f"{n / 1_000_000_000:.3f} b"
+        return f"{num:,}"
 
 # ---------- Session State ----------
 if "gaps" not in st.session_state:
@@ -63,15 +64,15 @@ if "n_start" not in st.session_state:
 banner_placeholder = st.empty()
 def update_banner():
     primes = st.session_state.primes
-    num_primes_million = len(primes) / 1_000_000
-    total_numbers_checked = primes[-1]
+    million_text = f"{len(primes)/1_000_000:.2f} million"
+    checked_text = format_number(primes[-1])
     banner_placeholder.markdown(
         f"""
         <div style='background-color:#FFD700; padding:30px; border-radius:5px; text-align:center;'>
             <span style='font-size:36px;'>the current database contains around</span><br>
-            <span style='font-size:48px; font-weight:bold;'>{num_primes_million:.2f} million</span><br>
+            <span style='font-size:48px; font-weight:bold;'>{million_text}</span><br>
             <span style='font-size:36px;'>primes</span><br>
-            <span style='font-size:18px;'>(approx. {format_number(total_numbers_checked)} numbers checked)</span>
+            <span style='font-size:18px;'>(approx. {checked_text} numbers checked)</span>
         </div>
         """,
         unsafe_allow_html=True
@@ -87,17 +88,33 @@ if ADMIN_KEY:
     key_input = st.text_input("Enter admin key to enable admin tools:", type="password")
     if key_input == ADMIN_KEY:
         st.subheader("Admin Tools")
-        uploaded_file = st.file_uploader("Upload your database.bin", type=["bin"])
-        if uploaded_file is not None:
+
+        # Upload multiple parts
+        uploaded_files = st.file_uploader(
+            "Upload your database parts (.part*.bin)", 
+            type=["bin"], 
+            accept_multiple_files=True
+        )
+        if uploaded_files:
             gaps_arr = array.array('I')
-            gaps_arr.frombytes(uploaded_file.read())
+            for uf in sorted(uploaded_files, key=lambda x: x.name):
+                content = uf.read()
+                if len(content) % 4 != 0 or len(content) == 0:
+                    st.warning(f"Skipping invalid file {uf.name}")
+                    continue
+                temp_arr = array.array('I')
+                temp_arr.frombytes(content)
+                gaps_arr.extend(temp_arr)
+
             st.session_state.gaps = list(gaps_arr)
             st.session_state.primes = reconstruct_primes(st.session_state.gaps)
             st.session_state.n_start = st.session_state.primes[-1] + 1
             st.session_state.primes_since_save = 0
             update_banner()
-            st.success(f"Database uploaded successfully! Total primes: {len(st.session_state.primes)}")
+            st.success(f"Successfully merged {len(uploaded_files)} files! "
+                       f"Total primes: {len(st.session_state.primes)}")
 
+        # Download database.bin
         if os.path.exists(DB_FILE):
             with open(DB_FILE, "rb") as f:
                 st.download_button("Download database.bin", f, file_name="database.bin", mime="application/octet-stream")
@@ -120,7 +137,7 @@ st.markdown(
 )
 
 if st.button("Find next batch of primes"):
-    PRIMES_PER_BATCH = random.randint(100_000, 200_000)
+    PRIMES_PER_BATCH = random.randint(MIN_BATCH, MAX_BATCH)
     SAVE_INTERVAL = PRIMES_PER_BATCH
 
     primes_found = 0

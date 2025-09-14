@@ -89,60 +89,71 @@ if ADMIN_KEY:
     if key_input == ADMIN_KEY:
         st.subheader("Admin Tools")
 
+        # Upload parts, but don't merge yet
         uploaded_files = st.file_uploader(
-            "Upload your database parts (.part*.bin)", 
-            type=["bin"], 
+            "Upload your database parts (.part*.bin)",
+            type=["bin"],
             accept_multiple_files=True
         )
 
         if uploaded_files:
-            # Ensure part0 is present
-            filenames = [uf.name for uf in uploaded_files]
-            if not any("part0" in name for name in filenames):
-                st.error("You must include part0 when uploading database parts.")
-            else:
-                # Merge in sorted order
-                gaps_arr = array.array('I')
-                valid_files = 0
+            st.info(f"{len(uploaded_files)} file(s) uploaded. Click 'Merge Parts' to process them.")
 
-                for uf in sorted(uploaded_files, key=lambda x: x.name):
-                    try:
-                        content = uf.read()
-                        if not content:
-                            st.warning(f"Skipping empty file {uf.name}")
-                            continue
-                        if len(content) % 4 != 0:
-                            st.warning(f"Skipping invalid file {uf.name} (size not divisible by 4)")
-                            continue
+            if st.button("Merge Parts"):
+                try:
+                    # Sort files by part number
+                    uploaded_files_sorted = sorted(
+                        uploaded_files,
+                        key=lambda x: int(x.name.split("part")[1].split(".")[0])
+                    )
 
-                        temp_arr = array.array('I')
-                        temp_arr.frombytes(content)
-                        gaps_arr.extend(temp_arr)
-                        valid_files += 1
-                    except Exception as e:
-                        st.error(f"Error reading {uf.name}: {e}")
+                    expected_parts = list(range(len(uploaded_files_sorted)))
+                    actual_parts = [int(f.name.split("part")[1].split(".")[0]) for f in uploaded_files_sorted]
 
-                if valid_files > 0:
-                    # Update session state
-                    st.session_state.gaps = list(gaps_arr)
-                    st.session_state.primes = reconstruct_primes(st.session_state.gaps)
-                    st.session_state.n_start = st.session_state.primes[-1] + 1
-                    st.session_state.primes_since_save = 0
+                    if expected_parts != actual_parts:
+                        st.error(f"Missing parts! Expected parts {expected_parts}, but got {actual_parts}.")
+                    elif actual_parts[0] != 0:
+                        st.error("You must include part0 when uploading database parts.")
+                    else:
+                        # Merge into one array
+                        gaps_arr = array.array('I')
+                        valid_files = 0
 
-                    # Save merged DB
-                    save_gaps(st.session_state.gaps)
+                        for uf in uploaded_files_sorted:
+                            content = uf.read()
+                            if not content:
+                                st.error(f"File {uf.name} is empty.")
+                                break
+                            if len(content) % 4 != 0:
+                                st.error(f"File {uf.name} size invalid (not divisible by 4).")
+                                break
+                            temp_arr = array.array('I')
+                            temp_arr.frombytes(content)
+                            gaps_arr.extend(temp_arr)
+                            valid_files += 1
 
-                    update_banner()
-                    st.success(f"Successfully merged {valid_files} valid files! "
-                               f"Database saved to {DB_FILE}. "
-                               f"Total primes: {len(st.session_state.primes)}")
-                else:
-                    st.error("No valid database parts were uploaded.")
+                        if valid_files == len(uploaded_files_sorted):
+                            st.session_state.gaps = list(gaps_arr)
+                            st.session_state.primes = reconstruct_primes(st.session_state.gaps)
+                            st.session_state.n_start = st.session_state.primes[-1] + 1
+                            st.session_state.primes_since_save = 0
+                            save_gaps(st.session_state.gaps)
+                            update_banner()
+
+                            st.success(f"Merged {valid_files} files successfully! "
+                                       f"Database saved to {DB_FILE}. "
+                                       f"Total primes: {len(st.session_state.primes)}")
+                except Exception as e:
+                    st.error(f"Merge failed: {e}")
 
         # Download merged database.bin
         if os.path.exists(DB_FILE):
             with open(DB_FILE, "rb") as f:
-                st.download_button("Download database.bin", f, file_name="database.bin", mime="application/octet-stream")
+                st.download_button(
+                    "Download database.bin", f,
+                    file_name="database.bin",
+                    mime="application/octet-stream"
+                )
 
 # ---------- Nth Prime Finder ----------
 st.header("Nth Prime Finder")

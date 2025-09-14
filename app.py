@@ -97,22 +97,41 @@ if ADMIN_KEY:
         )
         if uploaded_files:
             gaps_arr = array.array('I')
-            for uf in sorted(uploaded_files, key=lambda x: x.name):
-                content = uf.read()
-                if len(content) % 4 != 0 or len(content) == 0:
-                    st.warning(f"Skipping invalid file {uf.name}")
-                    continue
-                temp_arr = array.array('I')
-                temp_arr.frombytes(content)
-                gaps_arr.extend(temp_arr)
+            valid_files = 0
 
-            st.session_state.gaps = list(gaps_arr)
-            st.session_state.primes = reconstruct_primes(st.session_state.gaps)
-            st.session_state.n_start = st.session_state.primes[-1] + 1
-            st.session_state.primes_since_save = 0
-            update_banner()
-            st.success(f"Successfully merged {len(uploaded_files)} files! "
-                       f"Total primes: {len(st.session_state.primes)}")
+            for uf in sorted(uploaded_files, key=lambda x: x.name):
+                try:
+                    content = uf.read()
+                    if not content:
+                        st.warning(f"Skipping empty file {uf.name}")
+                        continue
+                    if len(content) % 4 != 0:
+                        st.warning(f"Skipping invalid file {uf.name} (size not divisible by 4)")
+                        continue
+                    
+                    temp_arr = array.array('I')
+                    temp_arr.frombytes(content)
+                    gaps_arr.extend(temp_arr)
+                    valid_files += 1
+                except Exception as e:
+                    st.error(f"Error reading {uf.name}: {e}")
+
+            if valid_files > 0:
+                # Update session state
+                st.session_state.gaps = list(gaps_arr)
+                st.session_state.primes = reconstruct_primes(st.session_state.gaps)
+                st.session_state.n_start = st.session_state.primes[-1] + 1
+                st.session_state.primes_since_save = 0
+
+                # Save merged DB immediately
+                save_gaps(st.session_state.gaps)
+
+                update_banner()
+                st.success(f"Successfully merged {valid_files} valid files! "
+                           f"Database saved to {DB_FILE}. "
+                           f"Total primes: {len(st.session_state.primes)}")
+            else:
+                st.error("No valid database parts were uploaded.")
 
         # Download database.bin
         if os.path.exists(DB_FILE):

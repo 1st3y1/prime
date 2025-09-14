@@ -96,9 +96,9 @@ if ADMIN_KEY:
         )
 
         if uploaded_files:
-            st.info(f"{len(uploaded_files)} file(s) uploaded. Click 'Merge Parts' to process them.")
+            st.info(f"{len(uploaded_files)} file(s) uploaded. Click 'Preview Merge' to check them.")
 
-            if st.button("Merge Parts"):
+            if st.button("Preview Merge"):
                 try:
                     # Sort by part number
                     uploaded_files_sorted = sorted(
@@ -106,11 +106,12 @@ if ADMIN_KEY:
                         key=lambda x: int(x.name.split("part")[1].split(".")[0])
                     )
 
+                    # Validate part numbering
                     expected_parts = list(range(len(uploaded_files_sorted)))
                     actual_parts = [int(f.name.split("part")[1].split(".")[0]) for f in uploaded_files_sorted]
 
                     if expected_parts != actual_parts:
-                        st.error(f"Missing parts! Expected {expected_parts}, got {actual_parts}.")
+                        st.error(f"Missing or misnumbered parts! Expected {expected_parts}, got {actual_parts}.")
                     elif actual_parts[0] != 0:
                         st.error("You must include part0 when uploading database parts.")
                     else:
@@ -118,8 +119,7 @@ if ADMIN_KEY:
                         valid_files = 0
 
                         for uf in uploaded_files_sorted:
-                            # Always read fresh bytes
-                            uf_bytes = uf.getvalue()  
+                            uf_bytes = uf.getvalue()
                             if not uf_bytes:
                                 st.error(f"File {uf.name} is empty.")
                                 break
@@ -133,19 +133,27 @@ if ADMIN_KEY:
                             valid_files += 1
 
                         if valid_files == len(uploaded_files_sorted):
-                            st.session_state.gaps = list(gaps_arr)
-                            st.session_state.primes = reconstruct_primes(st.session_state.gaps)
-                            st.session_state.n_start = st.session_state.primes[-1] + 1
-                            st.session_state.primes_since_save = 0
-                            save_gaps(st.session_state.gaps)
-                            update_banner()
+                            # Preview primes count
+                            preview_primes = reconstruct_primes(gaps_arr)
+                            st.session_state.preview_gaps = list(gaps_arr)  # store temporarily
+                            st.session_state.preview_primes = preview_primes
 
-                            st.success(f"Merged {valid_files} files successfully! "
-                                       f"Database saved to {DB_FILE}. "
-                                       f"Total primes: {len(st.session_state.primes)}")
+                            st.success(f"Preview successful! "
+                                       f"Merging {valid_files} parts would give "
+                                       f"{len(preview_primes)} primes. "
+                                       f"Highest prime: {preview_primes[-1]:,}")
+
+                            if st.button("Confirm Merge & Save"):
+                                save_gaps(st.session_state.preview_gaps)
+                                st.session_state.gaps = st.session_state.preview_gaps
+                                st.session_state.primes = st.session_state.preview_primes
+                                st.session_state.n_start = st.session_state.primes[-1] + 1
+                                st.session_state.primes_since_save = 0
+                                update_banner()
+                                st.success(f"Database saved to {DB_FILE} with {len(st.session_state.primes)} primes.")
 
                 except Exception as e:
-                    st.error(f"Merge failed: {e}")
+                    st.error(f"Preview failed: {e}")
 
         if os.path.exists(DB_FILE):
             with open(DB_FILE, "rb") as f:
